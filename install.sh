@@ -22,20 +22,30 @@ else
     INSTALL_TYPE="client"
 fi
 
-# prompt user for server address ports
-read -p "Enter server address: " SERVER_ADDRESS
-read -p "Enter server port[7000]: " SERVER_PORT
+# prompt user for server address and ports, allow env override for non-interactive
+if [ -z "$SERVER_ADDRESS" ]; then
+    read -p "Enter server address: " SERVER_ADDRESS
+fi
+if [ -z "$SERVER_PORT" ]; then
+    read -p "Enter server port[7000]: " SERVER_PORT
+fi
 SERVER_PORT=${SERVER_PORT:-7000}
 # if setting up server, mention to expose ports SERVER_PORT, 80 and 443
 if [ "$INSTALL_TYPE" == "server" ]; then
     echo "Make sure to expose ports ${SERVER_PORT}, 80 and 443 in your firewall or cloud provider settings."
 fi
 #ask for auth token leave blank for none
-read -p "Enter auth token (leave blank for none): " AUTH_TOKEN
+if [ -z "$AUTH_TOKEN" ]; then
+    read -p "Enter auth token (leave blank for none): " AUTH_TOKEN
+fi
 #ask for CF_TOKEN if server install
 if [ "$INSTALL_TYPE" == "server" ]; then
-    read -p "Enter Cloudflare API Token (DNS Edit): " CF_TOKEN
-    read -p "Enter Certbot email: " CERT_EMAIL
+    if [ -z "$CF_TOKEN" ]; then
+        read -p "Enter Cloudflare API Token (DNS Edit): " CF_TOKEN
+    fi
+    if [ -z "$CERT_EMAIL" ]; then
+        read -p "Enter Certbot email: " CERT_EMAIL
+    fi
 fi
 
 #install nginx and certbot for server
