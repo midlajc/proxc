@@ -3,35 +3,43 @@ set -e
 
 FRP_VERSION="0.52.3"
 
-# prompt user for client or server installation
-read -p "Install FRP as (c)lient or (s)erver? " INSTALL_TYPE
+# check for -c (client) or -s (server) flag, else prompt user
+if [[ "$1" == "-client" ]]; then
+    INSTALL_TYPE="c"
+elif [[ "$1" == "-server" ]]; then
+    INSTALL_TYPE="s"
+else
+    read -p "Install FRP as (c)lient or (s)erver? " INSTALL_TYPE
+fi
 
 if [ "$INSTALL_TYPE" == "s" ]; then
     INSTALL_DIR="/opt/frp"
+    INSTALL_TYPE="server"
 else
     INSTALL_DIR="$HOME/.proxc"
     BIN_DIR="$HOME/.local/bin"
     mkdir -p $BIN_DIR
+    INSTALL_TYPE="client"
 fi
 
 # prompt user for server address ports
 read -p "Enter server address: " SERVER_ADDRESS
 read -p "Enter server port[7000]: " SERVER_PORT
 SERVER_PORT=${SERVER_PORT:-7000}
-# if setting up server, mention to expose ports 7000 ,80 and 443
-if [ "$INSTALL_TYPE" == "s" ]; then
-    echo "Make sure to expose ports 7000, 80 and 443 on your server!"
+# if setting up server, mention to expose ports SERVER_PORT, 80 and 443
+if [ "$INSTALL_TYPE" == "server" ]; then
+    echo "Make sure to expose ports ${SERVER_PORT}, 80 and 443 in your firewall or cloud provider settings."
 fi
 #ask for auth token leave blank for none
 read -p "Enter auth token (leave blank for none): " AUTH_TOKEN
 #ask for CF_TOKEN if server install
-if [ "$INSTALL_TYPE" == "s" ]; then
+if [ "$INSTALL_TYPE" == "server" ]; then
     read -p "Enter Cloudflare API Token (DNS Edit): " CF_TOKEN
     read -p "Enter Certbot email: " CERT_EMAIL
 fi
 
 #install nginx and certbot for server
-if [ "$INSTALL_TYPE" == "s" ]; then
+if [ "$INSTALL_TYPE" == "server" ]; then
     echo "Installing nginx and certbot..."
     sudo apt update
     sudo apt install -y nginx certbot python3-certbot-nginx python3-certbot-dns-cloudflare
@@ -65,7 +73,7 @@ if [ ! -f  $INSTALL_DIR/frpc ]; then
   get_frpc
 fi
 
-if [ "$INSTALL_TYPE" == "s" ]; then
+if [ "$INSTALL_TYPE" == "server" ]; then
 echo
 echo "🔧 Server configuration"
 
@@ -159,7 +167,7 @@ echo "✅ Server setup complete. FRP server is running."
 exit 0
 fi
 
-if [ "$INSTALL_TYPE" == "c" ]; then
+if [ "$INSTALL_TYPE" == "client" ]; then
 echo
 echo "🔧 Client configuration"
 

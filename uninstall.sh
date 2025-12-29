@@ -3,17 +3,25 @@ set -e
 
 FRP_VERSION="0.52.3"
 
-# prompt user for client or server installation
-read -p "Install FRP as (c)lient or (s)erver? " MODE
-
-if [ "$MODE" == "s" ]; then
-    INSTALL_DIR="/opt/frp"
+# check for -c (client) or -s (server) flag, else prompt user
+if [[ "$1" == "-client" ]]; then
+    MODE="c"
+elif [[ "$1" == "-server" ]]; then
+    MODE="s"
 else
-    INSTALL_DIR="$HOME/.proxc"
-    BIN_DIR="$HOME/.local/bin"
+    read -p "Install FRP as (c)lient or (s)erver? " MODE
 fi
 
 if [ "$MODE" == "s" ]; then
+    INSTALL_DIR="/opt/frp"
+    MODE="server"
+else
+    INSTALL_DIR="$HOME/.proxc"
+    BIN_DIR="$HOME/.local/bin"
+    MODE="client"
+fi
+
+if [ "$MODE" == "server" ]; then
     echo "Uninstalling FRP server..."
     sudo systemctl stop frps
     sudo systemctl disable frps
