@@ -9,7 +9,7 @@ if [[ "$1" == "-client" ]]; then
 elif [[ "$1" == "-server" ]]; then
     INSTALL_TYPE="s"
 else
-    read -p "Install FRP as (c)lient or (s)erver? " INSTALL_TYPE
+    read -p "Install FRP as (c)lient or (s)erver? " INSTALL_TYPE </dev/tty
 fi
 
 if [ "$INSTALL_TYPE" == "s" ]; then
@@ -24,10 +24,10 @@ fi
 
 # prompt user for server address and ports, allow env override for non-interactive
 if [ -z "$SERVER_ADDRESS" ]; then
-    read -p "Enter server address: " SERVER_ADDRESS
+    read -p "Enter server address: " SERVER_ADDRESS </dev/tty
 fi
 if [ -z "$SERVER_PORT" ]; then
-    read -p "Enter server port[7000]: " SERVER_PORT
+    read -p "Enter server port[7000]: " SERVER_PORT </dev/tty
 fi
 SERVER_PORT=${SERVER_PORT:-7000}
 # if setting up server, mention to expose ports SERVER_PORT, 80 and 443
@@ -36,15 +36,15 @@ if [ "$INSTALL_TYPE" == "server" ]; then
 fi
 #ask for auth token leave blank for none
 if [ -z "$AUTH_TOKEN" ]; then
-    read -p "Enter auth token (leave blank for none): " AUTH_TOKEN
+    read -p "Enter auth token (leave blank for none): " AUTH_TOKEN </dev/tty
 fi
 #ask for CF_TOKEN if server install
 if [ "$INSTALL_TYPE" == "server" ]; then
     if [ -z "$CF_TOKEN" ]; then
-        read -p "Enter Cloudflare API Token (DNS Edit): " CF_TOKEN
+        read -p "Enter Cloudflare API Token (DNS Edit): " CF_TOKEN </dev/tty
     fi
     if [ -z "$CERT_EMAIL" ]; then
-        read -p "Enter Certbot email: " CERT_EMAIL
+        read -p "Enter Certbot email: " CERT_EMAIL </dev/tty
     fi
 fi
 
