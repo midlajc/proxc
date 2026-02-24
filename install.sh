@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -e
 
 FRP_VERSION="0.52.3"
@@ -189,6 +189,9 @@ EOF
 chmod 600 $INSTALL_DIR/.env
 
 cat > $BIN_DIR/proxc <<'EOF'
+#!/usr/bin/env bash
+set -e
+
 ENV_FILE="$HOME/.proxc/.env"
 
 if [ ! -f "$ENV_FILE" ]; then
