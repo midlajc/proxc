@@ -28,10 +28,25 @@ if [ "$MODE" == "server" ]; then
     sudo rm /etc/systemd/system/frps.service
     sudo systemctl daemon-reload
     sudo rm -rf $INSTALL_DIR
-    sudo rm -f /etc/nginx/sites-available/proxc
-    sudo rm -f /etc/nginx/sites-enabled/proxc
-    sudo nginx -t
-    sudo systemctl reload nginx
+
+    if systemctl list-unit-files | grep -q '^openresty\.service'; then
+        sudo systemctl stop openresty || true
+        sudo systemctl disable openresty || true
+        sudo rm -f /etc/openresty/nginx.conf
+        sudo rm -f /etc/openresty/init_by_lua/proxc_auto_ssl.lua
+        sudo rm -rf /var/lib/proxc/auto-ssl
+        sudo rm -f /etc/ssl/proxc/fallback.crt
+        sudo rm -f /etc/ssl/proxc/fallback.key
+    fi
+
+    if systemctl list-unit-files | grep -q '^nginx\.service'; then
+        sudo rm -f /etc/nginx/sites-available/proxc
+        sudo rm -f /etc/nginx/sites-enabled/proxc
+        sudo nginx -t || true
+        sudo systemctl reload nginx || true
+    fi
+
+    sudo rm -f /root/.secrets/certbot/cloudflare.ini
     echo "FRP server uninstalled."
 else
     echo "Uninstalling FRP client..."

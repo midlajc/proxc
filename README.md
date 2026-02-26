@@ -1,277 +1,244 @@
-# PROXC – FRP-based Secure Tunnel with Subdomain & HTTPS Support
+# PROXC - FRP-based Secure Tunnel with Subdomain HTTPS
 
 ## Overview
 
-**PROXC** is a lightweight tunneling solution built on top of **FRP (Fast Reverse Proxy)** that allows you to securely expose local services to the internet using **subdomains and HTTPS**, without manual configuration every time.
+**PROXC** is a lightweight tunneling solution built on top of **FRP (Fast Reverse Proxy)**.
+It exposes local services to the internet with subdomains and HTTPS.
 
-This project provides a **single interactive Bash installer** that can set up:
+The installer supports:
 
-* ✅ An **FRP server** with:
+- FRP server (`frps`) with systemd
+- FRP client (`frpc`) + `proxc <port> <subdomain>` CLI
+- HTTPS termination for subdomains
+  - `SSL_MODE=ondemand` (default): OpenResty + `lua-resty-auto-ssl` on-demand certificates
+  - `SSL_MODE=cloudflare`: Certbot wildcard certificates via Cloudflare DNS
 
-  * Subdomain-based routing
-  * Automatic HTTPS using **Certbot + Cloudflare DNS**
-  * Nginx reverse proxy
-  * Systemd service for reliability
+## Architecture
 
-* ✅ An **FRP client** with:
-
-  * Simple `proxc <port> <subdomain>` CLI
-  * Token-based authentication
-  * Zero manual config files per tunnel
-
-
-## What This Script Is For
-
-This script is designed to:
-
-* Expose **local development servers** (web apps, APIs, dashboards)
-* Avoid port forwarding or router configuration
-* Provide **HTTPS + wildcard subdomains**
-
-* Offer **repeatable, automated server setup**
-
-
-
-## Technologies Used
-
-This script integrates multiple tools into one automated flow:
-
-| Component              | Purpose                       |
-| ---------------------- | ----------------------------- |
-| **FRP (frps / frpc)**  | Reverse proxy tunneling       |
-| **Nginx**              | HTTP/HTTPS reverse proxy      |
-| **Certbot**            | SSL certificates              |
-
-
-
-## Architecture Overview
-
-```
+```text
 Local App (localhost:3000)
-        │
-        ▼
+        |
+        v
       frpc
-        │
-        ▼
-     frps (Server)
-        │
-        ▼
-      Nginx
-        │
-        ▼
+        |
+        v
+     frps (Server, vhostHTTPPort=7080)
+        |
+        v
+OpenResty/Nginx TLS termination
+        |
+        v
 https://subdomain.yourdomain.com
 ```
 
-* FRP handles tunneling
-* Nginx handles HTTPS & routing
-
-
 ## Requirements
 
-### Server Requirements
+### Server
 
-* Ubuntu 20.04+ (recommended)
-* Public IP or cloud VM
-* Domain name (e.g. `example.com`)
-* Cloudflare DNS (domain must be managed by Cloudflare)
-* Ports open:
+- Ubuntu 20.04+
+- Public IP / cloud VM
+- Domain name (e.g. `example.com`)
+- DNS records:
+  - `A example.com -> <server-ip>`
+  - `A *.example.com -> <server-ip>`
+- Open ports:
+  - `7000` (or custom FRP bind port)
+  - `80`
+  - `443`
 
-  * `7000` (FRP, configurable)
-  * `80`
-  * `443`
+### Client
 
-### Client Requirements
+- Linux or macOS
+- Any local service listening on `localhost`
 
-* Linux or macOS
-* No root access required
-* Any local service running on `localhost`
+## Installation
 
-
-&nbsp;  
-
-# Installation
-
-## Server Installation (FRP Server)
-
-Run the installer and follow the prompts:
+### Server Install
 
 ```bash
 curl -o- https://raw.githubusercontent.com/midlajc/proxc/refs/heads/master/install.sh | sudo bash -s -- -server
 ```
 
-> **Note:** Server installation requires `sudo` access.
+You will be prompted for:
 
-### You Will Be Asked For:
+| Prompt | Description |
+| --- | --- |
+| Server address | Root domain, e.g. `example.com` |
+| Server port | FRP bind port (default `7000`) |
+| Auth token | Shared token between server/client |
+| SSL mode | `ondemand` (default) or `cloudflare` |
+| ACME/Certbot email | Registration email for certificate issuer |
+| ACME CA | `production` or `staging` (ondemand mode) |
+| Cloudflare API token | Only when `SSL_MODE=cloudflare` |
 
-| Prompt               | Description                        |
-| -------------------- | ---------------------------------- |
-| Server address       | Your domain (e.g. `example.com`)   |
-| Server port          | FRP bind port (default `7000`)     |
-| Auth token           | Shared secret for clients          |
-| Cloudflare API Token | Token with **DNS Edit** permission |
-| Certbot email        | Email for SSL certificates         |
-
-### What Happens Automatically
-
-* FRP server (`frps`) installed in `/opt/frp`
-* Systemd service created and enabled
-* Nginx installed and configured
-* Wildcard SSL certificates issued:
-
-  * `*.example.com`
-  * `example.com`
-* HTTP → HTTPS ready
-* Subdomain routing enabled
-
-### Server Status Check
+### Non-interactive Server Install (On-Demand SSL)
 
 ```bash
-systemctl status frps
+SERVER_ADDRESS=example.com \
+SERVER_PORT=7000 \
+AUTH_TOKEN=change-me \
+SSL_MODE=ondemand \
+SSL_ONDEMAND_DOMAIN=example.com \
+ACME_CA=production \
+CERT_EMAIL=admin@example.com \
+curl -o- https://raw.githubusercontent.com/midlajc/proxc/refs/heads/master/install.sh | sudo bash -s -- -server
 ```
 
----
-
-## Client Installation (FRP Client)
-
-On your **local machine**, run:
+### Client Install
 
 ```bash
 curl -o- https://raw.githubusercontent.com/midlajc/proxc/refs/heads/master/install.sh | bash -s -- -client
 ```
 
-### Client Setup Details
+## Usage
 
-* FRP client installed to: `~/.proxc`
-* Config stored securely in: `~/.proxc/.env`
-* CLI installed to: `~/.local/bin/proxc`
-
-Ensure `~/.local/bin` is in your PATH:
-
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-```
-
----
-
-## Using PROXC (Client)
-
-### Start a Tunnel
+Start a tunnel:
 
 ```bash
 proxc <local_port> <subdomain>
 ```
 
-### Example
+Example:
 
 ```bash
 proxc 3000 app
 ```
 
-This exposes:
+Output URL:
 
-```
-https://app.example.com → http://localhost:3000
+```text
+https://app.example.com
 ```
 
-### Another Example
+## SSL Modes
+
+### 1) `SSL_MODE=ondemand` (Default)
+
+- Uses OpenResty + Lua ACME automation
+- Issues cert on first HTTPS request per hostname
+- Keeps private keys on server
+- Auto-renews managed certs
+- Restricts issuance to `SSL_ONDEMAND_DOMAIN` and its subdomains
+- If issuer rate limits are hit, new host issuance fails temporarily while existing hosts continue to work
+
+### 2) `SSL_MODE=cloudflare`
+
+- Uses Certbot DNS-01 with Cloudflare token
+- Issues wildcard cert (`*.example.com` + `example.com`)
+
+## Health Checks
+
+FRP service:
 
 ```bash
-proxc 8080 api
+systemctl status frps
 ```
 
+OpenResty logs (ondemand mode):
+
+```bash
+journalctl -u openresty -f
 ```
-https://api.example.com → http://localhost:8080
+
+TLS check for a subdomain:
+
+```bash
+openssl s_client -connect example.com:443 -servername app.example.com
 ```
 
-Each tunnel:
-
-* Uses HTTPS automatically
-* Is isolated per subdomain
-* Requires no Nginx or SSL config on client side
-
-
-## Authentication & Security
-
-* Uses **token-based authentication**
-* Token must match between server and client
-* SSL certificates are managed automatically
-* Cloudflare API token is stored with `600` permissions
-
-
-
-## File & Directory Layout
+## Files and Paths
 
 ### Server
 
-```
+```text
 /opt/frp/
- ├─ frps
- ├─ frps.toml
+  frps
+  frps.toml
+
+/etc/systemd/system/frps.service
 ```
 
+On-demand SSL mode:
+
+```text
+/etc/openresty/nginx.conf
+/etc/openresty/init_by_lua/proxc_auto_ssl.lua
+/var/lib/proxc/auto-ssl/
+/etc/ssl/proxc/fallback.crt
+/etc/ssl/proxc/fallback.key
 ```
-/etc/systemd/system/frps.service
+
+Cloudflare mode:
+
+```text
 /etc/nginx/sites-available/proxc
-/etc/letsencrypt/live/example.com/
+/etc/nginx/sites-enabled/proxc
+/root/.secrets/certbot/cloudflare.ini
+/etc/letsencrypt/live/<domain>/
 ```
 
 ### Client
 
-```
+```text
 ~/.proxc/
- ├─ frpc
- ├─ .env
-```
+  frpc
+  .env
 
-```
 ~/.cache/proxc/
- ├─ subdomain.toml
+  <subdomain>.toml
+
+~/.local/bin/proxc
 ```
 
+## Security Notes
 
+- FRP access is token-protected (`AUTH_TOKEN`)
+- On-demand mode denies certificate issuance for non-matching hostnames
+- TLS private keys stay on the server in on-demand mode
+- Cloudflare token file (cloudflare mode) is stored with `600` permissions
 
 ## Troubleshooting
 
-### FRP Server Not Reachable
+### New Subdomain TLS Fails in On-Demand Mode
 
-* Ensure port `7000` (or custom) is open
-* Check firewall rules
-* Verify DNS points to server IP
+- Ensure DNS wildcard record points to the server
+- Ensure ports `80` and `443` are reachable from internet
+- Check issuer rate limits for many new hostnames
+- Inspect logs:
 
-### SSL Issues
+```bash
+journalctl -u openresty -f
+```
 
-* Confirm Cloudflare token has **DNS Edit**
-* Domain must be proxied **off** (DNS only) for validation
+### FRP Server Unreachable
 
-### Command Not Found
+- Check `frps` status:
+
+```bash
+systemctl status frps
+```
+
+- Verify firewall and cloud security group rules
+- Verify DNS points to server IP
+
+### `proxc` Not Found
 
 ```bash
 which proxc
 ```
 
-Ensure `~/.local/bin` is in PATH.
+Ensure `~/.local/bin` is in `PATH`.
 
+## Uninstall
 
-## Uninstall Notes
-
-* Remove FRP service:
+Server:
 
 ```bash
 curl -o- https://raw.githubusercontent.com/midlajc/proxc/refs/heads/master/uninstall.sh | sudo bash -s -- -server
 ```
 
-* Remove client:
+Client:
 
 ```bash
 curl -o- https://raw.githubusercontent.com/midlajc/proxc/refs/heads/master/uninstall.sh | bash -s -- -client
 ```
-
-
-## Summary
-
-**PROXC** gives you:
-
-* Self-hosted tunneling
-* HTTPS by default
-* Subdomain routing
-* One-command usage
