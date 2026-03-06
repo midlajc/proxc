@@ -1,94 +1,173 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
 FRP_VERSION="0.52.3"
+REGISTER_PORT="7090"
+ACME_WEBROOT="/var/www/proxc-acme"
+PROXC_ASSET_BASE_URL="${PROXC_ASSET_BASE_URL:-https://raw.githubusercontent.com/midlajc/proxc/refs/heads/master}"
 
-# check for -c (client) or -s (server) flag, else prompt user
-if [[ "$1" == "-client" ]]; then
-    INSTALL_TYPE="c"
-elif [[ "$1" == "-server" ]]; then
-    INSTALL_TYPE="s"
-else
-    read -p "Install FRP as (c)lient or (s)erver? " INSTALL_TYPE </dev/tty
+SCRIPT_PATH="${BASH_SOURCE[0]:-}"
+SCRIPT_DIR=""
+if [[ -n "$SCRIPT_PATH" && -f "$SCRIPT_PATH" ]]; then
+    SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 fi
 
-if [ "$INSTALL_TYPE" == "s" ]; then
-    INSTALL_DIR="/opt/frp"
+LOCAL_ASSET_DIR="${PROXC_LOCAL_ASSET_DIR:-}"
+if [[ -z "$LOCAL_ASSET_DIR" && -n "$SCRIPT_DIR" && ( -d "$SCRIPT_DIR/installer_assets" || -d "$SCRIPT_DIR/templates" ) ]]; then
+    LOCAL_ASSET_DIR="$SCRIPT_DIR"
+fi
+
+ASSET_TMP_DIR="$(mktemp -d)"
+cleanup() {
+    rm -rf "$ASSET_TMP_DIR"
+}
+trap cleanup EXIT
+
+download_asset() {
+    local asset_name="$1"
+    local destination="$2"
+    local remote_url
+
+    if [[ -n "$LOCAL_ASSET_DIR" && -f "$LOCAL_ASSET_DIR/$asset_name" ]]; then
+        cp "$LOCAL_ASSET_DIR/$asset_name" "$destination"
+        return
+    fi
+
+    remote_url="${PROXC_ASSET_BASE_URL%/}/$asset_name"
+    download_url "$remote_url" "$destination"
+}
+
+download_url() {
+    local url="$1"
+    local out="$2"
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL "$url" -o "$out"
+        return
+    fi
+
+    if command -v wget >/dev/null 2>&1; then
+        wget -qO "$out" "$url"
+        return
+    fi
+
+    echo "❌ Missing downloader. Install curl or wget."
+    exit 1
+}
+
+escape_sed_replacement() {
+    printf '%s' "$1" | sed -e 's/[|&]/\\&/g'
+}
+
+render_template() {
+    local template_path="$1"
+    local output_path="$2"
+    shift 2
+
+    local sed_args=()
+    local key value escaped_value
+    while (( "$#" )); do
+        key="$1"
+        value="$2"
+        shift 2
+        escaped_value="$(escape_sed_replacement "$value")"
+        sed_args+=("-e" "s|__${key}__|${escaped_value}|g")
+    done
+
+    sed "${sed_args[@]}" "$template_path" > "$output_path"
+}
+
+if [[ "${1:-}" == "-client" ]]; then
+    INSTALL_TYPE="client"
+elif [[ "${1:-}" == "-server" ]]; then
     INSTALL_TYPE="server"
+else
+    read -p "Install FRP as (c)lient or (s)erver? " INSTALL_CHOICE </dev/tty
+    if [[ "$INSTALL_CHOICE" == "s" ]]; then
+        INSTALL_TYPE="server"
+    else
+        INSTALL_TYPE="client"
+    fi
+fi
+
+if [[ "$INSTALL_TYPE" == "server" ]]; then
+    if [[ "${EUID}" -ne 0 ]]; then
+        echo "❌ Server install must run as root (use sudo)."
+        exit 1
+    fi
+    INSTALL_DIR="/opt/frp"
 else
     INSTALL_DIR="$HOME/.proxc"
     BIN_DIR="$HOME/.local/bin"
-    mkdir -p $BIN_DIR
-    INSTALL_TYPE="client"
+    mkdir -p "$BIN_DIR"
 fi
 
-# prompt user for server address and ports, allow env override for non-interactive
-if [ -z "$SERVER_ADDRESS" ]; then
-    read -p "Enter server address: " SERVER_ADDRESS </dev/tty
+if [[ -z "${SERVER_ADDRESS:-}" ]]; then
+    read -p "Enter server address (base domain): " SERVER_ADDRESS </dev/tty
 fi
-if [ -z "$SERVER_PORT" ]; then
-    read -p "Enter server port[7000]: " SERVER_PORT </dev/tty
+if [[ -z "${SERVER_PORT:-}" ]]; then
+    read -p "Enter server port [7000]: " SERVER_PORT </dev/tty
 fi
-SERVER_PORT=${SERVER_PORT:-7000}
-# if setting up server, mention to expose ports SERVER_PORT, 80 and 443
-if [ "$INSTALL_TYPE" == "server" ]; then
+SERVER_PORT="${SERVER_PORT:-7000}"
+
+if [[ "$INSTALL_TYPE" == "server" ]]; then
     echo "Make sure to expose ports ${SERVER_PORT}, 80 and 443 in your firewall or cloud provider settings."
 fi
-#ask for auth token leave blank for none
-if [ -z "$AUTH_TOKEN" ]; then
+
+if [[ -z "${AUTH_TOKEN:-}" ]]; then
     read -p "Enter auth token (leave blank for none): " AUTH_TOKEN </dev/tty
 fi
-#ask for CF_TOKEN if server install
-if [ "$INSTALL_TYPE" == "server" ]; then
-    if [ -z "$CF_TOKEN" ]; then
-        read -p "Enter Cloudflare API Token (DNS Edit): " CF_TOKEN </dev/tty
-    fi
-    if [ -z "$CERT_EMAIL" ]; then
+
+if [[ "$INSTALL_TYPE" == "server" ]]; then
+    if [[ -z "${CERT_EMAIL:-}" ]]; then
         read -p "Enter Certbot email: " CERT_EMAIL </dev/tty
     fi
 fi
 
-#install nginx and certbot for server
-if [ "$INSTALL_TYPE" == "server" ]; then
+if [[ "$INSTALL_TYPE" == "server" ]]; then
     echo "Installing nginx and certbot..."
-    sudo apt update
-    sudo apt install -y nginx certbot python3-certbot-nginx python3-certbot-dns-cloudflare
+    apt update
+    apt install -y nginx certbot python3 python3-certbot-nginx curl
 fi
 
-function get_frpc()
-{
-    unameOut="$(uname -s)"
-    case "${unameOut}" in
-        Linux*)     machine=Linux;;
-        Darwin*)    machine=Mac;;
-        CYGWIN*)    machine=Cygwin;;
-        MINGW*)     machine=MinGw;;
-        *)          machine="UNKNOWN:${unameOut}"
+get_frp() {
+    local uname_out machine archive
+    uname_out="$(uname -s)"
+
+    case "$uname_out" in
+        Linux*)
+            machine="Linux"
+            archive="frp_${FRP_VERSION}_linux_amd64.tar.gz"
+            ;;
+        Darwin*)
+            machine="Mac"
+            archive="frp_${FRP_VERSION}_darwin_arm64.tar.gz"
+            ;;
+        *)
+            echo "❌ Unsupported platform: $uname_out"
+            exit 1
+            ;;
     esac
 
-    echo "Downloading frp client for ${machine}"
-
-    if [ ${machine} == "Linux" ]; then
-        wget https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_linux_amd64.tar.gz -O /tmp/frp.tar.gz
-    elif [ ${machine} == "Mac" ]; then
-            wget https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_darwin_arm64.tar.gz -O /tmp/frp.tar.gz
-        fi
-
-    tar -xvzf /tmp/frp.tar.gz -C $INSTALL_DIR --strip-components=1
+    echo "Downloading FRP binaries for ${machine}"
+    download_url "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/${archive}" /tmp/frp.tar.gz
+    tar -xzf /tmp/frp.tar.gz -C "$INSTALL_DIR" --strip-components=1
 }
 
-# ---------- COMMON ----------
-mkdir -p $INSTALL_DIR
-if [ ! -f  $INSTALL_DIR/frpc ]; then
-  get_frpc
+mkdir -p "$INSTALL_DIR"
+if [[ ! -f "$INSTALL_DIR/frpc" ]]; then
+    get_frp
+fi
+if [[ "$INSTALL_TYPE" == "server" && ! -f "$INSTALL_DIR/frps" ]]; then
+    get_frp
 fi
 
-if [ "$INSTALL_TYPE" == "server" ]; then
-echo
-echo "🔧 Server configuration"
+if [[ "$INSTALL_TYPE" == "server" ]]; then
+    echo
+    echo "🔧 Server configuration"
 
-# FRPS CONFIG
-cat > $INSTALL_DIR/frps.toml <<EOF
+    mkdir -p "$ACME_WEBROOT"
+
+    cat > "$INSTALL_DIR/frps.toml" <<FRPS_EOF
 bindPort = ${SERVER_PORT}
 subdomainHost = "${SERVER_ADDRESS}"
 
@@ -96,146 +175,88 @@ vhostHTTPPort = 7080
 
 auth.method = "token"
 auth.token = "${AUTH_TOKEN}"
-EOF
+FRPS_EOF
 
-# SYSTEMD SERVICE
-cat > /etc/systemd/system/frps.service <<EOF
-[Unit]
-Description=FRP Server Service
-After=network.target
+    download_asset "templates/frps.service.tpl" "$ASSET_TMP_DIR/frps.service.tpl"
+    render_template "$ASSET_TMP_DIR/frps.service.tpl" /etc/systemd/system/frps.service \
+        INSTALL_DIR "$INSTALL_DIR"
 
-[Service]
-Type=simple
-User=root
-ExecStart=${INSTALL_DIR}/frps -c ${INSTALL_DIR}/frps.toml
-Restart=on-failure
+    cat > "$INSTALL_DIR/register.env" <<REGISTER_ENV_EOF
+BASE_DOMAIN=${SERVER_ADDRESS}
+AUTH_TOKEN=${AUTH_TOKEN}
+CERT_EMAIL=${CERT_EMAIL}
+ACME_WEBROOT=${ACME_WEBROOT}
+REGISTER_PORT=${REGISTER_PORT}
+PROXY_UPSTREAM=http://localhost:7080
+REGISTER_ENV_EOF
+    chmod 600 "$INSTALL_DIR/register.env"
 
-[Install]
-WantedBy=multi-user.target
-EOF
+    download_asset "installer_assets/proxc_register.py" "$ASSET_TMP_DIR/proxc_register.py"
+    install -m 700 "$ASSET_TMP_DIR/proxc_register.py" "$INSTALL_DIR/proxc_register.py"
 
-# ENABLE AND START SERVICE
-systemctl daemon-reload
-systemctl enable frps.service
-systemctl start frps.service
+    download_asset "templates/proxc-register.service.tpl" "$ASSET_TMP_DIR/proxc-register.service.tpl"
+    render_template "$ASSET_TMP_DIR/proxc-register.service.tpl" /etc/systemd/system/proxc-register.service \
+        INSTALL_DIR "$INSTALL_DIR"
 
-# Obtain SSL certificates using Certbot
-echo "Obtaining SSL certificates for ${SERVER_ADDRESS}..."
-mkdir -p /root/.secrets/certbot
-cat > /root/.secrets/certbot/cloudflare.ini <<EOF
-dns_cloudflare_api_token = ${CF_TOKEN}
-EOF
-chmod 600 /root/.secrets/certbot/cloudflare.ini
-certbot certonly \
-    --dns-cloudflare \
-    --dns-cloudflare-credentials /root/.secrets/certbot/cloudflare.ini \
-    -d "*.${SERVER_ADDRESS}" \
-    -d "${SERVER_ADDRESS}" \
-    --agree-tos \
-    --non-interactive \
-    -m "${CERT_EMAIL}"
+    download_asset "templates/nginx-bootstrap.conf.tpl" "$ASSET_TMP_DIR/nginx-bootstrap.conf.tpl"
+    render_template "$ASSET_TMP_DIR/nginx-bootstrap.conf.tpl" /etc/nginx/sites-available/proxc \
+        SERVER_ADDRESS "$SERVER_ADDRESS" \
+        ACME_WEBROOT "$ACME_WEBROOT" \
+        REGISTER_PORT "$REGISTER_PORT"
 
-# Configure Nginx
-echo "Configuring Nginx..."
-cat > /etc/nginx/sites-available/proxc <<EOF
-server {
-    listen 80;
-    server_name ${SERVER_ADDRESS} *.${SERVER_ADDRESS};
+    ln -sf /etc/nginx/sites-available/proxc /etc/nginx/sites-enabled/proxc
+    systemctl daemon-reload
+    systemctl enable --now frps.service
+    systemctl enable --now proxc-register.service
+    systemctl enable --now nginx
 
-    location / {
-        proxy_pass http://localhost:7080;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-    }
-}
+    nginx -t
+    systemctl reload nginx
 
-server {
-    listen 443 ssl;
-    server_name ${SERVER_ADDRESS} *.${SERVER_ADDRESS};
+    echo "Obtaining HTTPS certificate for ${SERVER_ADDRESS} via HTTP-01..."
+    certbot certonly \
+        --webroot \
+        -w "${ACME_WEBROOT}" \
+        -d "${SERVER_ADDRESS}" \
+        --agree-tos \
+        --non-interactive \
+        --keep-until-expiring \
+        -m "${CERT_EMAIL}"
 
-    ssl_certificate /etc/letsencrypt/live/${SERVER_ADDRESS}/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/${SERVER_ADDRESS}/privkey.pem;
+    download_asset "templates/nginx-final.conf.tpl" "$ASSET_TMP_DIR/nginx-final.conf.tpl"
+    render_template "$ASSET_TMP_DIR/nginx-final.conf.tpl" /etc/nginx/sites-available/proxc \
+        SERVER_ADDRESS "$SERVER_ADDRESS" \
+        ACME_WEBROOT "$ACME_WEBROOT" \
+        REGISTER_PORT "$REGISTER_PORT"
 
-    location / {
-        proxy_pass http://localhost:7080;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-    }
-}
-EOF
+    mkdir -p /etc/letsencrypt/renewal-hooks/deploy
+    download_asset "installer_assets/proxc-nginx-reload.sh" "$ASSET_TMP_DIR/proxc-nginx-reload.sh"
+    install -m 755 "$ASSET_TMP_DIR/proxc-nginx-reload.sh" /etc/letsencrypt/renewal-hooks/deploy/proxc-nginx-reload.sh
 
-ln -sf /etc/nginx/sites-available/proxc /etc/nginx/sites-enabled/proxc
-nginx -t
-nginx -s reload
+    nginx -t
+    systemctl reload nginx
 
-echo
-echo "✅ Server setup complete. FRP server is running."
-exit 0
+    echo
+    echo "✅ Server setup complete. FRP and registration API are running."
+    exit 0
 fi
 
-if [ "$INSTALL_TYPE" == "client" ]; then
 echo
 echo "🔧 Client configuration"
 
-cat > $INSTALL_DIR/.env <<EOF
+REGISTER_ENDPOINT_DEFAULT="https://${SERVER_ADDRESS}/_proxc/register"
+REGISTER_ENDPOINT="${REGISTER_ENDPOINT:-$REGISTER_ENDPOINT_DEFAULT}"
+
+cat > "$INSTALL_DIR/.env" <<CLIENT_ENV_EOF
 SERVER_ADDRESS=${SERVER_ADDRESS}
 SERVER_PORT=${SERVER_PORT}
 AUTH_TOKEN=${AUTH_TOKEN}
-EOF
-chmod 600 $INSTALL_DIR/.env
+REGISTER_ENDPOINT=${REGISTER_ENDPOINT}
+CLIENT_ENV_EOF
+chmod 600 "$INSTALL_DIR/.env"
 
-cat > $BIN_DIR/proxc <<'EOF'
-#!/usr/bin/env bash
-set -e
-
-ENV_FILE="$HOME/.proxc/.env"
-
-if [ ! -f "$ENV_FILE" ]; then
-  echo "❌ Missing $HOME/.proxc/.env"
-  exit 1
-fi
-
-set -o allexport
-source "$ENV_FILE"
-set +o allexport
-
-PORT=$1
-SUBDOMAIN=$2
-
-if [ -z "$PORT" ] || [ -z "$SUBDOMAIN" ]; then
-  echo "Usage: proxc <port> <subdomain>"
-  exit 1
-fi
-
-mkdir -p ~/.cache/proxc
-rm -f ~/.cache/proxc/${SUBDOMAIN}.toml
-
-CFG="$HOME/.cache/proxc/${SUBDOMAIN}.toml"
-cat > "$CFG" <<CFGEOF
-serverAddr = "${SERVER_ADDRESS}"
-serverPort = ${SERVER_PORT}
-
-auth.method = "token"
-auth.token = "${AUTH_TOKEN}"
-
-[[proxies]]
-name = "${SUBDOMAIN}"
-type = "http"
-localIP = "127.0.0.1"
-localPort = ${PORT}
-subdomain = "${SUBDOMAIN}"
-CFGEOF
-
-echo "🚀 Tunnel started → https://${SUBDOMAIN}.${SERVER_ADDRESS}"
-exec $HOME/.proxc/frpc -c "$CFG"
-EOF
-
-chmod +x $BIN_DIR/proxc
+download_asset "installer_assets/proxc-client.sh" "$ASSET_TMP_DIR/proxc-client.sh"
+install -m 755 "$ASSET_TMP_DIR/proxc-client.sh" "$BIN_DIR/proxc"
 
 echo
 echo "✅ Client setup complete. Use the 'proxc' command to start tunnels."
-fi
