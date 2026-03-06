@@ -1,277 +1,186 @@
-# PROXC – FRP-based Secure Tunnel with Subdomain & HTTPS Support
+# PROXC - FRP-based Secure Tunnel with On-Demand HTTPS
 
 ## Overview
 
-**PROXC** is a lightweight tunneling solution built on top of **FRP (Fast Reverse Proxy)** that allows you to securely expose local services to the internet using **subdomains and HTTPS**, without manual configuration every time.
+**PROXC** is a lightweight tunneling solution built on top of **FRP (Fast Reverse Proxy)** that exposes local services with **subdomain routing and HTTPS**.
 
-This project provides a **single interactive Bash installer** that can set up:
+This project provides a single installer that sets up:
 
-* ✅ An **FRP server** with:
+- An FRP server (`frps`) with Nginx and Certbot
+- A local registration API that issues certificates on demand per subdomain
+- An FRP client with a simple `proxc <port> <subdomain>` command
 
-  * Subdomain-based routing
-  * Automatic HTTPS using **Certbot + Cloudflare DNS**
-  * Nginx reverse proxy
-  * Systemd service for reliability
+## How HTTPS Works (HTTP-01)
 
-* ✅ An **FRP client** with:
+- Base domain certificate is issued for `yourdomain.com` during server install.
+- Each new subdomain (for example `app.yourdomain.com`) is issued automatically when a client starts `proxc`.
+- Certificate validation uses **HTTP-01** (`/.well-known/acme-challenge/...`) via Nginx webroot.
+- No Cloudflare token or DNS API plugin is required.
 
-  * Simple `proxc <port> <subdomain>` CLI
-  * Token-based authentication
-  * Zero manual config files per tunnel
-
-
-## What This Script Is For
-
-This script is designed to:
-
-* Expose **local development servers** (web apps, APIs, dashboards)
-* Avoid port forwarding or router configuration
-* Provide **HTTPS + wildcard subdomains**
-
-* Offer **repeatable, automated server setup**
-
-
-
-## Technologies Used
-
-This script integrates multiple tools into one automated flow:
-
-| Component              | Purpose                       |
-| ---------------------- | ----------------------------- |
-| **FRP (frps / frpc)**  | Reverse proxy tunneling       |
-| **Nginx**              | HTTP/HTTPS reverse proxy      |
-| **Certbot**            | SSL certificates              |
-
-
-
-## Architecture Overview
+## Architecture
 
 ```
 Local App (localhost:3000)
-        │
-        ▼
+        |
+        v
       frpc
-        │
-        ▼
+        |
+        v
      frps (Server)
-        │
-        ▼
-      Nginx
-        │
-        ▼
-https://subdomain.yourdomain.com
+        |
+        v
+      Nginx + Certbot + Register API
+        |
+        v
+https://app.yourdomain.com
 ```
 
-* FRP handles tunneling
-* Nginx handles HTTPS & routing
-
+- FRP handles tunneling
+- Nginx handles HTTP/HTTPS
+- Register API provisions per-subdomain certificates before tunnel start
 
 ## Requirements
 
-### Server Requirements
+### Server
 
-* Ubuntu 20.04+ (recommended)
-* Public IP or cloud VM
-* Domain name (e.g. `example.com`)
-* Cloudflare DNS (domain must be managed by Cloudflare)
-* Ports open:
+- Ubuntu 20.04+
+- Public IP / VM
+- Domain configured so both records point to server IP:
+  - `yourdomain.com`
+  - `*.yourdomain.com`
+- Open ports:
+  - `7000` (or your chosen FRP bind port)
+  - `80`
+  - `443`
 
-  * `7000` (FRP, configurable)
-  * `80`
-  * `443`
+### Client
 
-### Client Requirements
+- Linux or macOS
+- Local app running on `localhost:<port>`
 
-* Linux or macOS
-* No root access required
-* Any local service running on `localhost`
+## Installation
 
-
-&nbsp;  
-
-# Installation
-
-## Server Installation (FRP Server)
-
-Run the installer and follow the prompts:
+### Server
 
 ```bash
 curl -o- https://raw.githubusercontent.com/midlajc/proxc/refs/heads/master/install.sh | sudo bash -s -- -server
 ```
 
-> **Note:** Server installation requires `sudo` access.
+`install.sh` downloads helper assets (templates and scripts) from this repo during install.
 
-### You Will Be Asked For:
+Prompts:
 
-| Prompt               | Description                        |
-| -------------------- | ---------------------------------- |
-| Server address       | Your domain (e.g. `example.com`)   |
-| Server port          | FRP bind port (default `7000`)     |
-| Auth token           | Shared secret for clients          |
-| Cloudflare API Token | Token with **DNS Edit** permission |
-| Certbot email        | Email for SSL certificates         |
+- Server address (base domain, example: `yourdomain.com`)
+- Server port (default `7000`)
+- Auth token
+- Certbot email
 
-### What Happens Automatically
+Server setup installs and configures:
 
-* FRP server (`frps`) installed in `/opt/frp`
-* Systemd service created and enabled
-* Nginx installed and configured
-* Wildcard SSL certificates issued:
+- `/opt/frp/frps`
+- `frps.service`
+- `proxc-register.service`
+- Nginx site config and ACME webroot
+- Certbot renew hook that reloads Nginx
 
-  * `*.example.com`
-  * `example.com`
-* HTTP → HTTPS ready
-* Subdomain routing enabled
-
-### Server Status Check
-
-```bash
-systemctl status frps
-```
-
----
-
-## Client Installation (FRP Client)
-
-On your **local machine**, run:
+### Client
 
 ```bash
 curl -o- https://raw.githubusercontent.com/midlajc/proxc/refs/heads/master/install.sh | bash -s -- -client
 ```
 
-### Client Setup Details
+`install.sh` downloads helper assets (templates and scripts) from this repo during install.
 
-* FRP client installed to: `~/.proxc`
-* Config stored securely in: `~/.proxc/.env`
-* CLI installed to: `~/.local/bin/proxc`
+Client setup installs:
 
-Ensure `~/.local/bin` is in your PATH:
+- `~/.proxc/frpc`
+- `~/.proxc/.env`
+- `~/.local/bin/proxc`
 
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-```
+Ensure `~/.local/bin` is in your `PATH`.
 
----
+Optional installer overrides:
 
-## Using PROXC (Client)
+- `PROXC_ASSET_BASE_URL` to download assets/templates from a custom raw URL root.
+- `PROXC_LOCAL_ASSET_DIR` to use local files (repo root containing `installer_assets/` and `templates/`) instead of downloading.
 
-### Start a Tunnel
+## Usage
+
+Start a tunnel:
 
 ```bash
 proxc <local_port> <subdomain>
 ```
 
-### Example
+Example:
 
 ```bash
 proxc 3000 app
 ```
 
-This exposes:
+This flow now does:
 
-```
-https://app.example.com → http://localhost:3000
-```
+1. Calls registration API: `POST /_proxc/register`
+2. Issues/ensures cert for `app.<base-domain>`
+3. Starts FRP tunnel
 
-### Another Example
+Output URL:
 
-```bash
-proxc 8080 api
-```
-
-```
-https://api.example.com → http://localhost:8080
+```text
+https://yourdomain.com
 ```
 
-Each tunnel:
+## Validation Rules for `<subdomain>`
 
-* Uses HTTPS automatically
-* Is isolated per subdomain
-* Requires no Nginx or SSL config on client side
-
-
-## Authentication & Security
-
-* Uses **token-based authentication**
-* Token must match between server and client
-* SSL certificates are managed automatically
-* Cloudflare API token is stored with `600` permissions
-
-
-
-## File & Directory Layout
-
-### Server
-
-```
-/opt/frp/
- ├─ frps
- ├─ frps.toml
-```
-
-```
-/etc/systemd/system/frps.service
-/etc/nginx/sites-available/proxc
-/etc/letsencrypt/live/example.com/
-```
-
-### Client
-
-```
-~/.proxc/
- ├─ frpc
- ├─ .env
-```
-
-```
-~/.cache/proxc/
- ├─ subdomain.toml
-```
-
-
+- Single DNS label only
+- Lowercase letters, numbers, hyphens
+- No dots
+- No leading/trailing hyphen
 
 ## Troubleshooting
 
-### FRP Server Not Reachable
+### Certificate issuance fails
 
-* Ensure port `7000` (or custom) is open
-* Check firewall rules
-* Verify DNS points to server IP
+- Confirm DNS for both `yourdomain.com` and `*.yourdomain.com` points to server IP.
+- Confirm port `80` is publicly reachable.
+- Check logs:
 
-### SSL Issues
+```bash
+journalctl -u proxc-register.service -f
+```
 
-* Confirm Cloudflare token has **DNS Edit**
-* Domain must be proxied **off** (DNS only) for validation
+### Tunnel starts but endpoint unavailable
 
-### Command Not Found
+- Confirm FRP service:
+
+```bash
+systemctl status frps
+```
+
+- Confirm Nginx config:
+
+```bash
+nginx -t
+```
+
+### Command not found (`proxc`)
 
 ```bash
 which proxc
 ```
 
-Ensure `~/.local/bin` is in PATH.
+Ensure `~/.local/bin` is in `PATH`.
 
+## Uninstall
 
-## Uninstall Notes
-
-* Remove FRP service:
+Server:
 
 ```bash
 curl -o- https://raw.githubusercontent.com/midlajc/proxc/refs/heads/master/uninstall.sh | sudo bash -s -- -server
 ```
 
-* Remove client:
+Client:
 
 ```bash
 curl -o- https://raw.githubusercontent.com/midlajc/proxc/refs/heads/master/uninstall.sh | bash -s -- -client
 ```
-
-
-## Summary
-
-**PROXC** gives you:
-
-* Self-hosted tunneling
-* HTTPS by default
-* Subdomain routing
-* One-command usage
