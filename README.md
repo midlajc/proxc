@@ -8,6 +8,7 @@ This project provides a single installer that sets up:
 
 - An FRP server (`frps`) with Nginx and Certbot
 - A local registration API that issues certificates on demand per subdomain
+- An admin dashboard for live FRP status and on-demand HTTP request inspection
 - An FRP client with a simple `proxc <port> <subdomain>` command
 
 ## How HTTPS Works (HTTP-01)
@@ -74,6 +75,11 @@ Prompts:
 - Server port (default `7000`)
 - Auth token
 - Certbot email
+- Admin dashboard token
+- Request retention days (default `7`)
+- Request body capture max KB (default `256`)
+- Default capture duration minutes (default `15`)
+- FRPS dashboard local credentials
 
 Server setup installs and configures:
 
@@ -81,6 +87,7 @@ Server setup installs and configures:
 - `frps.service`
 - `proxc-register.service`
 - Nginx site config and ACME webroot
+- Admin request capture DB (`/opt/frp/proxc_admin.db`)
 - Certbot renew hook that reloads Nginx
 
 ### Client
@@ -127,8 +134,19 @@ This flow now does:
 Output URL:
 
 ```text
-https://yourdomain.com
+https://<subdomain>.yourdomain.com
 ```
+
+## Admin Dashboard
+
+- URL: `https://<base-domain>/_proxc/admin`
+- Login: use the admin token configured during server install.
+- Features:
+  - Live FRPS proxy status (online/total and per-proxy stats)
+  - Manual capture start/stop per subdomain
+  - Request inspection for captured windows (route, params, headers, body)
+
+Request capture is disabled by default and only stored during active capture windows.
 
 ## Validation Rules for `<subdomain>`
 

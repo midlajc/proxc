@@ -58,6 +58,16 @@ escape_sed_replacement() {
     printf '%s' "$1" | sed -e 's/[|&]/\\&/g'
 }
 
+random_hex() {
+    local length="${1:-48}"
+    if command -v openssl >/dev/null 2>&1; then
+        openssl rand -hex "$((length / 2))"
+        return
+    fi
+
+    od -An -N "$((length / 2))" -tx1 /dev/urandom | tr -d ' \n'
+}
+
 render_template() {
     local template_path="$1"
     local output_path="$2"
@@ -121,6 +131,49 @@ if [[ "$INSTALL_TYPE" == "server" ]]; then
     if [[ -z "${CERT_EMAIL:-}" ]]; then
         read -p "Enter Certbot email: " CERT_EMAIL </dev/tty
     fi
+    if [[ -z "${ADMIN_TOKEN:-}" ]]; then
+        read -p "Enter admin dashboard token: " ADMIN_TOKEN </dev/tty
+    fi
+    if [[ -z "$ADMIN_TOKEN" ]]; then
+        ADMIN_TOKEN="$(random_hex 48)"
+        echo "Generated admin dashboard token: ${ADMIN_TOKEN}"
+    fi
+    if [[ -z "${REQUEST_RETENTION_DAYS:-}" ]]; then
+        read -p "Request retention days [7]: " REQUEST_RETENTION_DAYS </dev/tty
+    fi
+    REQUEST_RETENTION_DAYS="${REQUEST_RETENTION_DAYS:-7}"
+
+    if [[ -z "${REQUEST_BODY_MAX_KB:-}" ]]; then
+        read -p "Request body capture max KB [256]: " REQUEST_BODY_MAX_KB </dev/tty
+    fi
+    REQUEST_BODY_MAX_KB="${REQUEST_BODY_MAX_KB:-256}"
+
+    if [[ -z "${CAPTURE_DEFAULT_DURATION_MINUTES:-}" ]]; then
+        read -p "Default capture duration in minutes [15]: " CAPTURE_DEFAULT_DURATION_MINUTES </dev/tty
+    fi
+    CAPTURE_DEFAULT_DURATION_MINUTES="${CAPTURE_DEFAULT_DURATION_MINUTES:-15}"
+
+    if [[ -z "${FRPS_DASHBOARD_PORT:-}" ]]; then
+        read -p "FRPS dashboard local port [7500]: " FRPS_DASHBOARD_PORT </dev/tty
+    fi
+    FRPS_DASHBOARD_PORT="${FRPS_DASHBOARD_PORT:-7500}"
+
+    if [[ -z "${FRPS_DASHBOARD_USER:-}" ]]; then
+        read -p "FRPS dashboard user [admin]: " FRPS_DASHBOARD_USER </dev/tty
+    fi
+    FRPS_DASHBOARD_USER="${FRPS_DASHBOARD_USER:-admin}"
+
+    if [[ -z "${FRPS_DASHBOARD_PASS:-}" ]]; then
+        read -p "FRPS dashboard password: " FRPS_DASHBOARD_PASS </dev/tty
+    fi
+    if [[ -z "$FRPS_DASHBOARD_PASS" ]]; then
+        FRPS_DASHBOARD_PASS="$(random_hex 48)"
+        echo "Generated FRPS dashboard password: ${FRPS_DASHBOARD_PASS}"
+    fi
+
+    if [[ -z "${MIRROR_SHARED_SECRET:-}" ]]; then
+        MIRROR_SHARED_SECRET="$(random_hex 48)"
+    fi
 fi
 
 if [[ "$INSTALL_TYPE" == "server" ]]; then
@@ -175,6 +228,11 @@ vhostHTTPPort = 7080
 
 auth.method = "token"
 auth.token = "${AUTH_TOKEN}"
+
+webServer.addr = "127.0.0.1"
+webServer.port = ${FRPS_DASHBOARD_PORT}
+webServer.user = "${FRPS_DASHBOARD_USER}"
+webServer.password = "${FRPS_DASHBOARD_PASS}"
 FRPS_EOF
 
     download_asset "templates/frps.service.tpl" "$ASSET_TMP_DIR/frps.service.tpl"
@@ -188,6 +246,15 @@ CERT_EMAIL=${CERT_EMAIL}
 ACME_WEBROOT=${ACME_WEBROOT}
 REGISTER_PORT=${REGISTER_PORT}
 PROXY_UPSTREAM=http://localhost:7080
+ADMIN_TOKEN=${ADMIN_TOKEN}
+REQUEST_RETENTION_DAYS=${REQUEST_RETENTION_DAYS}
+REQUEST_BODY_MAX_KB=${REQUEST_BODY_MAX_KB}
+CAPTURE_DEFAULT_DURATION_MINUTES=${CAPTURE_DEFAULT_DURATION_MINUTES}
+PROXC_ADMIN_DB_PATH=${INSTALL_DIR}/proxc_admin.db
+FRPS_DASHBOARD_URL=http://127.0.0.1:${FRPS_DASHBOARD_PORT}
+FRPS_DASHBOARD_USER=${FRPS_DASHBOARD_USER}
+FRPS_DASHBOARD_PASS=${FRPS_DASHBOARD_PASS}
+MIRROR_SHARED_SECRET=${MIRROR_SHARED_SECRET}
 REGISTER_ENV_EOF
     chmod 600 "$INSTALL_DIR/register.env"
 
@@ -202,7 +269,8 @@ REGISTER_ENV_EOF
     render_template "$ASSET_TMP_DIR/nginx-bootstrap.conf.tpl" /etc/nginx/sites-available/proxc \
         SERVER_ADDRESS "$SERVER_ADDRESS" \
         ACME_WEBROOT "$ACME_WEBROOT" \
-        REGISTER_PORT "$REGISTER_PORT"
+        REGISTER_PORT "$REGISTER_PORT" \
+        MIRROR_SHARED_SECRET "$MIRROR_SHARED_SECRET"
 
     ln -sf /etc/nginx/sites-available/proxc /etc/nginx/sites-enabled/proxc
     systemctl daemon-reload
@@ -227,7 +295,8 @@ REGISTER_ENV_EOF
     render_template "$ASSET_TMP_DIR/nginx-final.conf.tpl" /etc/nginx/sites-available/proxc \
         SERVER_ADDRESS "$SERVER_ADDRESS" \
         ACME_WEBROOT "$ACME_WEBROOT" \
-        REGISTER_PORT "$REGISTER_PORT"
+        REGISTER_PORT "$REGISTER_PORT" \
+        MIRROR_SHARED_SECRET "$MIRROR_SHARED_SECRET"
 
     mkdir -p /etc/letsencrypt/renewal-hooks/deploy
     download_asset "installer_assets/proxc-nginx-reload.sh" "$ASSET_TMP_DIR/proxc-nginx-reload.sh"
