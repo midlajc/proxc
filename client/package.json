@@ -3,6 +3,14 @@
   "version": "1.0.0",
   "description": "PROXC client CLI for provisioning HTTPS tunnels over FRP",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/midlajc/proxc.git"
+  },
+  "homepage": "https://github.com/midlajc/proxc",
+  "bugs": {
+    "url": "https://github.com/midlajc/proxc/issues"
+  },
   "publishConfig": {
     "access": "public"
   },
