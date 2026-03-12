@@ -86,10 +86,14 @@ Server setup installs and configures:
 ### Client
 
 ```bash
-curl -o- https://raw.githubusercontent.com/midlajc/proxc/refs/heads/master/install.sh | bash -s -- -client
+npm install -g @midlajc/proxc
 ```
 
-`install.sh` downloads helper assets (templates and scripts) from this repo during install.
+Then configure the client:
+
+```bash
+proxc config
+```
 
 Client setup installs:
 
@@ -97,7 +101,7 @@ Client setup installs:
 - `~/.proxc/.env`
 - `~/.local/bin/proxc`
 
-Ensure `~/.local/bin` is in your `PATH`.
+`proxc config` downloads `frpc` for the current platform and stores client config locally.
 
 Optional installer overrides:
 
@@ -109,12 +113,14 @@ Optional installer overrides:
 Start a tunnel:
 
 ```bash
+proxc config
 proxc <local_port> <subdomain>
 ```
 
 Example:
 
 ```bash
+proxc config
 proxc 3000 app
 ```
 
@@ -182,5 +188,6 @@ curl -o- https://raw.githubusercontent.com/midlajc/proxc/refs/heads/master/unins
 Client:
 
 ```bash
-curl -o- https://raw.githubusercontent.com/midlajc/proxc/refs/heads/master/uninstall.sh | bash -s -- -client
+npm uninstall -g @midlajc/proxc
+rm -rf ~/.proxc ~/.cache/proxc
 ```

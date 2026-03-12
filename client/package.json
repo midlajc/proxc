@@ -1,0 +1,52 @@
+{
+  "name": "@midlajc/proxc",
+  "version": "1.0.2",
+  "description": "PROXC client CLI for provisioning HTTPS tunnels over FRP",
+  "keywords": [
+    "proxc",
+    "frp",
+    "tunnel",
+    "reverse-proxy",
+    "https",
+    "cli",
+    "localhost",
+    "remote-access",
+    "proxy"
+  ],
+  "license": "MIT",
+  "main": "./dist/proxc.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/midlajc/proxc.git"
+  },
+  "homepage": "https://github.com/midlajc/proxc",
+  "bugs": {
+    "url": "https://github.com/midlajc/proxc/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc --noEmit -p tsconfig.json"
+  },
+  "bin": {
+    "proxc": "./dist/proxc.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.14",
+    "typescript": "^5.8.2"
+  },
+  "licenses": [
+    {
+      "type": "MIT",
+      "url": "https://github.com/midlajc/proxc/blob/master/LICENSE"
+    }
+  ]
+}
