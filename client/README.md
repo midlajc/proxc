@@ -12,6 +12,14 @@ Codebase: https://github.com/midlajc/proxc
 - `tar` available on the system
 - Access to a configured PROXC server
 
+## Server Setup
+
+Server configuration and install assets are available in the GitHub repo:
+
+- Repo overview: https://github.com/midlajc/proxc#readme
+- Server installer: https://github.com/midlajc/proxc/blob/master/server/install.sh
+- Server files: https://github.com/midlajc/proxc/tree/master/server
+
 ## Install
 
 ```bash
@@ -121,10 +129,3 @@ proxc config
 npm uninstall -g @midlajc/proxc
 rm -rf ~/.proxc ~/.cache/proxc
 ```
-## Server Setup
-
-Server configuration and install assets are available in the GitHub repo:
-
-- Repo overview: https://github.com/midlajc/proxc#readme
-- Server installer: https://github.com/midlajc/proxc/blob/master/server/install.sh
-- Server files: https://github.com/midlajc/proxc/tree/master/server
