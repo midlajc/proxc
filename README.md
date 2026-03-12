@@ -86,7 +86,7 @@ Server setup installs and configures:
 ### Client
 
 ```bash
-curl -o- https://raw.githubusercontent.com/midlajc/proxc/refs/heads/master/install.sh | bash -s -- -client
+npm install -g @midlajc/proxc
 ```
 
 `install.sh` downloads helper assets (templates and scripts) from this repo during install.
@@ -182,5 +182,6 @@ curl -o- https://raw.githubusercontent.com/midlajc/proxc/refs/heads/master/unins
 Client:
 
 ```bash
-curl -o- https://raw.githubusercontent.com/midlajc/proxc/refs/heads/master/uninstall.sh | bash -s -- -client
+npm uninstall -g @midlajc/proxc
+rm -rf ~/.proxc ~/.cache/proxc
 ```
