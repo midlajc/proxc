@@ -23,13 +23,13 @@ npm install -g @midlajc/proxc
 Run the interactive setup:
 
 ```bash
-proxc init
+proxc config
 ```
 
 You can also configure it non-interactively:
 
 ```bash
-proxc init \
+proxc config \
   --server-address yourdomain.com \
   --server-port 7000 \
   --auth-token your-token \
@@ -62,7 +62,7 @@ Before starting the tunnel, the CLI calls the server registration endpoint to en
 
 ## Commands
 
-### `proxc init`
+### `proxc config`
 
 Initializes or updates the local client config.
 
@@ -93,13 +93,15 @@ Subdomain rules:
 proxc --help
 ```
 
+`proxc init` is still accepted as a backward-compatible alias for `proxc config`.
+
 ## Troubleshooting
 
-If `proxc init` fails while downloading FRP:
+If `proxc config` fails while downloading FRP:
 
 - confirm outbound access to GitHub Releases
 - confirm `tar` is installed
-- rerun `proxc init`
+- rerun `proxc config`
 
 If tunnel registration fails:
 
@@ -110,7 +112,7 @@ If tunnel registration fails:
 If the CLI says config is missing:
 
 ```bash
-proxc init
+proxc config
 ```
 
 ## Uninstall
