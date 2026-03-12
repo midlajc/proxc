@@ -4,11 +4,11 @@
 
 **PROXC** is a lightweight tunneling solution built on top of **FRP (Fast Reverse Proxy)** that exposes local services with **subdomain routing and HTTPS**.
 
-This project provides a single installer that sets up:
+This project provides:
 
-- An FRP server (`frps`) with Nginx and Certbot
+- A server installer under `server/` for `frps`, Nginx, and Certbot
 - A local registration API that issues certificates on demand per subdomain
-- An FRP client with a simple `proxc <port> <subdomain>` command
+- An npm client package with a simple `proxc <port> <subdomain>` command
 
 ## How HTTPS Works (HTTP-01)
 
@@ -39,6 +39,11 @@ https://app.yourdomain.com
 - Nginx handles HTTP/HTTPS
 - Register API provisions per-subdomain certificates before tunnel start
 
+## Repo Layout
+
+- `server/` contains the server installer, uninstall script, templates, and registration assets
+- `client/` contains the npm package for the client CLI
+
 ## Requirements
 
 ### Server
@@ -55,6 +60,8 @@ https://app.yourdomain.com
 
 ### Client
 
+- Node.js 18+
+- npm
 - Linux or macOS
 - Local app running on `localhost:<port>`
 
@@ -63,10 +70,10 @@ https://app.yourdomain.com
 ### Server
 
 ```bash
-curl -o- https://raw.githubusercontent.com/midlajc/proxc/refs/heads/master/install.sh | sudo bash -s -- -server
+curl -o- https://raw.githubusercontent.com/midlajc/proxc/refs/heads/master/server/install.sh | sudo bash
 ```
 
-`install.sh` downloads helper assets (templates and scripts) from this repo during install.
+`server/install.sh` downloads helper assets from the `server/` directory in this repo during install.
 
 Prompts:
 
@@ -97,16 +104,16 @@ proxc config
 
 Client setup installs:
 
+- The global `proxc` CLI
+- `~/.proxc/config.json`
 - `~/.proxc/frpc`
-- `~/.proxc/.env`
-- `~/.local/bin/proxc`
 
 `proxc config` downloads `frpc` for the current platform and stores client config locally.
 
 Optional installer overrides:
 
-- `PROXC_ASSET_BASE_URL` to download assets/templates from a custom raw URL root.
-- `PROXC_LOCAL_ASSET_DIR` to use local files (repo root containing `installer_assets/` and `templates/`) instead of downloading.
+- `PROXC_ASSET_BASE_URL` to download server assets from a custom raw URL root. This should normally point to the repo `server/` directory.
+- `PROXC_LOCAL_ASSET_DIR` to use local files instead of downloading during server install. This can point to either the repo root or `server/`.
 
 ## Usage
 
@@ -133,7 +140,7 @@ This flow now does:
 Output URL:
 
 ```text
-https://yourdomain.com
+https://app.yourdomain.com
 ```
 
 ## Validation Rules for `<subdomain>`
@@ -175,14 +182,14 @@ nginx -t
 which proxc
 ```
 
-Ensure `~/.local/bin` is in `PATH`.
+If installed with npm, ensure your npm global bin directory is in `PATH`.
 
 ## Uninstall
 
 Server:
 
 ```bash
-curl -o- https://raw.githubusercontent.com/midlajc/proxc/refs/heads/master/uninstall.sh | sudo bash -s -- -server
+curl -o- https://raw.githubusercontent.com/midlajc/proxc/refs/heads/master/server/uninstall.sh | sudo bash
 ```
 
 Client:
